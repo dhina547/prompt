@@ -1,0 +1,751 @@
+MASTER PROMPT — VETERINARY SUPPLY ORDER AI AGENT
+
+You are a senior Python backend engineer and AI-agent architect.
+
+Build a complete, production-style prototype for the following challenge:
+
+==================================================
+1. BUSINESS PROBLEM
+==================================================
+
+We need an AI-powered veterinary medical-supply order processing agent.
+
+Veterinary clinics submit supply orders. The system must:
+
+1. Read incoming veterinary orders.
+2. Understand the natural-language item descriptions.
+3. Reconcile each requested item against the official veterinary supply catalog.
+4. Determine the requested quantity.
+5. Check availability in the primary warehouse.
+6. If the primary warehouse cannot fulfill the requested quantity, check the alternate warehouse.
+7. If the alternate warehouse can fulfill the shortage, propose/perform a reroute.
+8. Handle unavailable/back-ordered items.
+9. Evaluate order risk.
+10. Automatically dispatch only LOW-RISK orders.
+11. Send ambiguous, high-risk, or exceptional orders to HUMAN REVIEW.
+12. Allow a human to approve, reject, or override the proposed action.
+13. Persist orders, decisions, inventory checks, actions, human decisions, and audit information.
+14. Provide an understandable action/decision trace for every processed order.
+
+This must behave as an AGENTIC WORKFLOW, not as a single LLM call.
+
+==================================================
+2. INPUT DATA
+==================================================
+
+The project contains these CSV files:
+
+data/
+    vet_supply_catalog.csv
+    vet_supply_orders.csv
+    alt_warehouse_inventory.csv
+
+DO NOT assume the columns beyond what is actually present.
+
+First inspect the CSV files programmatically and determine:
+
+- exact column names
+- data types
+- number of rows
+- missing values
+- duplicate records
+- unusual values
+- invalid inventory values
+- actual order formats
+- ambiguous product descriptions
+
+Use the real dataset structure when implementing the system.
+
+Do not invent fake production data when real CSV data exists.
+
+==================================================
+3. TECHNOLOGY
+==================================================
+
+Use:
+
+- Python 3.11+
+- LangGraph for agent orchestration
+- FastAPI for backend/API
+- Pydantic for schemas
+- Pandas for CSV processing
+- SQLAlchemy for persistence
+- SQLite by default for easy execution
+- An LLM provider abstraction so the LLM can be replaced/configured easily
+- pytest for tests
+
+Do NOT build a React/frontend UI unless explicitly required.
+
+Human interaction must be supported through API endpoints and/or a CLI.
+
+Keep the architecture simple enough to understand and demonstrate within a 24–48 hour challenge.
+
+==================================================
+4. REQUIRED PROJECT STRUCTURE
+==================================================
+
+Create:
+
+vet-medical-order-agent/
+│
+├── README.md
+├── MANIFEST.md
+├── requirements.txt
+├── .env.example
+│
+├── data/
+│   ├── vet_supply_catalog.csv
+│   ├── vet_supply_orders.csv
+│   └── alt_warehouse_inventory.csv
+│
+├── app/
+│   ├── main.py
+│   │
+│   ├── agent.py
+│   ├── prompts.py
+│   ├── models.py
+│   ├── database.py
+│   ├── reconciliation.py
+│   ├── risk_engine.py
+│   └── tools.py
+│
+└── tests/
+    ├── test_reconciliation.py
+    ├── test_inventory.py
+    ├── test_risk.py
+    └── test_agent.py
+
+You may introduce additional files only when genuinely necessary.
+
+Avoid unnecessary abstraction and excessive folder nesting.
+
+==================================================
+5. CORE AGENT WORKFLOW
+==================================================
+
+Implement the workflow approximately as:
+
+START
+  ↓
+Load Order
+  ↓
+Parse Order Line Items
+  ↓
+Catalog Reconciliation
+  ↓
+Validate Matches
+  ↓
+Check Primary Inventory
+  ↓
+Handle Shortages
+  ↓
+Check Alternate Warehouse
+  ↓
+Fulfillment Decision
+  ↓
+Risk Evaluation
+  ↓
+Decision
+  ├── LOW RISK → Auto Dispatch
+  │
+  └── REVIEW REQUIRED → Human Review
+                              │
+                              ├── Approve
+                              ├── Reject
+                              └── Override
+  ↓
+Persist Result
+  ↓
+Audit Trail
+  ↓
+END
+
+Use LangGraph state to represent the workflow.
+
+==================================================
+6. AGENT STATE
+==================================================
+
+Create a strongly typed state model.
+
+The state should contain relevant information such as:
+
+- order_id
+- client information
+- raw order text
+- parsed line items
+- catalog matches
+- match confidence
+- inventory results
+- shortages
+- alternate warehouse results
+- proposed fulfillment actions
+- risk assessment
+- risk reasons
+- current status
+- human review status
+- human decision
+- final decision
+- action trace
+- errors/warnings
+
+Do not expose private chain-of-thought.
+
+Store concise decision explanations and observable actions instead.
+
+==================================================
+7. CATALOG RECONCILIATION
+==================================================
+
+The LLM may be used to understand natural-language descriptions.
+
+Example:
+
+Order:
+"2x rabies shot 3 year"
+
+Catalog:
+"Rabies Vaccine - 3-Year"
+
+The system should resolve the request to the appropriate SKU.
+
+The reconciliation component must return structured data such as:
+
+{
+    "requested_description": "...",
+    "sku": "...",
+    "catalog_name": "...",
+    "quantity": 2,
+    "confidence": 0.94,
+    "status": "MATCHED"
+}
+
+Possible statuses:
+
+- MATCHED
+- AMBIGUOUS
+- NOT_FOUND
+- INVALID
+
+IMPORTANT:
+
+Do not allow the LLM to invent SKUs.
+
+Every selected SKU MUST exist in the catalog.
+
+If the LLM proposes an SKU that does not exist:
+
+- reject the match
+- mark it invalid
+- send the relevant order/item to human review
+
+For high-confidence deterministic matches, prefer normal Python matching before using the LLM.
+
+==================================================
+8. INVENTORY LOGIC
+==================================================
+
+Primary inventory comes from the catalog's actual inventory field.
+
+For each line item:
+
+requested_quantity
+primary_available_quantity
+
+Determine:
+
+FULLY_AVAILABLE
+PARTIALLY_AVAILABLE
+OUT_OF_STOCK
+
+Example:
+
+Requested = 10
+Primary = 20
+
+→ FULLY_AVAILABLE
+
+Requested = 20
+Primary = 8
+
+→ PARTIALLY_AVAILABLE
+Shortage = 12
+
+Requested = 10
+Primary = 0
+
+→ OUT_OF_STOCK
+
+Do not allow negative inventory to be treated as valid available stock.
+
+If inventory contains an invalid value such as -6:
+
+- mark it as a data-quality issue
+- treat usable inventory as zero
+- record the warning
+- consider human review where appropriate
+
+==================================================
+9. ALTERNATE WAREHOUSE
+==================================================
+
+Use alt_warehouse_inventory.csv.
+
+For shortages:
+
+1. Determine shortage quantity.
+2. Check alternate warehouse stock for the same SKU.
+3. Never assume an SKU exists in the alternate inventory.
+4. Never use negative alternate inventory.
+5. Consider alternate warehouse shipping cost.
+6. Propose rerouting only when appropriate.
+
+Example:
+
+Requested = 20
+Primary = 8
+Shortage = 12
+Alternate = 30
+
+→ 8 from primary
+→ 12 from alternate
+→ reroute 12
+
+If:
+
+Requested = 20
+Primary = 8
+Alternate = 5
+
+Then:
+
+→ 8 from primary
+→ 5 from alternate
+→ remaining 7 back-ordered
+
+Record this explicitly.
+
+==================================================
+10. TOOLS
+==================================================
+
+Implement controlled tools/functions for:
+
+1. search_catalog()
+2. check_primary_inventory()
+3. check_alternate_inventory()
+4. calculate_shortage()
+5. propose_reroute()
+6. dispatch_order()
+7. create_human_review()
+8. approve_review()
+9. reject_review()
+10. override_review()
+
+The LLM/agent should call tools rather than directly modifying state arbitrarily.
+
+Every tool should:
+
+- validate inputs
+- return structured results
+- handle errors
+- create an audit entry where appropriate
+
+Never allow an agent to dispatch an order without passing the required validation and risk checks.
+
+==================================================
+11. RISK ENGINE
+==================================================
+
+Implement a deterministic risk engine.
+
+Do NOT let the LLM freely decide whether an order is safe to dispatch.
+
+The risk engine should consider factors such as:
+
+- ambiguous catalog match
+- missing SKU
+- low confidence match
+- insufficient primary inventory
+- alternate warehouse involvement
+- back-order
+- invalid inventory data
+- unusual/invalid quantities
+- missing required order information
+- tool/action errors
+
+Return:
+
+{
+    "risk_level": "LOW | MEDIUM | HIGH",
+    "reasons": [...]
+}
+
+Only LOW-risk orders may be automatically dispatched.
+
+MEDIUM/HIGH-risk orders must enter human review unless an explicit documented rule says otherwise.
+
+Keep risk rules transparent and configurable.
+
+==================================================
+12. HUMAN-IN-THE-LOOP
+==================================================
+
+Do NOT build a frontend.
+
+Implement human interaction through API endpoints and/or CLI.
+
+Required review states:
+
+PENDING_HUMAN_REVIEW
+APPROVED
+REJECTED
+OVERRIDDEN
+
+Example API:
+
+POST /orders/{order_id}/process
+
+GET /reviews/pending
+
+POST /reviews/{order_id}/approve
+
+POST /reviews/{order_id}/reject
+
+POST /reviews/{order_id}/override
+
+POST /orders/{order_id}/dispatch
+
+The human must be able to:
+
+- approve the proposed action
+- reject the proposed action
+- override the proposed action
+
+Every human action must be stored with:
+
+- timestamp
+- order_id
+- previous state
+- human decision
+- optional reason
+- resulting action
+
+==================================================
+13. DATABASE
+==================================================
+
+Use SQLAlchemy + SQLite.
+
+Create tables/models for at least:
+
+orders
+order_items
+catalog_items
+inventory_checks
+agent_decisions
+human_reviews
+audit_logs
+
+Persist:
+
+- raw order
+- parsed order
+- catalog match
+- inventory checks
+- risk assessment
+- proposed actions
+- executed actions
+- human decisions
+- timestamps
+- errors/warnings
+
+The system should be restartable without losing historical processing records.
+
+==================================================
+14. AUDIT TRAIL
+==================================================
+
+Every significant action must generate a concise audit event.
+
+Example:
+
+2026-09-26 10:20:01
+ORDER_RECEIVED
+
+2026-09-26 10:20:02
+CATALOG_MATCH
+VET-001
+confidence=0.96
+
+2026-09-26 10:20:03
+PRIMARY_INVENTORY_CHECK
+requested=10
+available=45
+
+2026-09-26 10:20:04
+RISK_ASSESSMENT
+risk=LOW
+
+2026-09-26 10:20:05
+AUTO_DISPATCH
+
+Do NOT expose raw hidden chain-of-thought.
+
+Only show concise, observable decision explanations.
+
+==================================================
+15. API
+==================================================
+
+Implement a minimal FastAPI API.
+
+At minimum:
+
+GET  /health
+
+GET  /orders
+
+GET  /orders/{order_id}
+
+POST /orders/{order_id}/process
+
+GET  /orders/{order_id}/trace
+
+GET  /reviews/pending
+
+POST /reviews/{order_id}/approve
+
+POST /reviews/{order_id}/reject
+
+POST /reviews/{order_id}/override
+
+The API should return clean JSON responses.
+
+==================================================
+16. ERROR HANDLING
+==================================================
+
+Handle:
+
+- malformed CSV
+- missing columns
+- missing SKU
+- duplicate SKU
+- invalid quantity
+- negative inventory
+- missing alternate inventory
+- LLM failure
+- invalid LLM output
+- database failure
+- tool failure
+- duplicate processing
+- already-dispatched orders
+
+The system must fail safely.
+
+If uncertain, prefer HUMAN_REVIEW rather than automatic dispatch.
+
+==================================================
+17. LLM DESIGN
+==================================================
+
+Use structured output wherever possible.
+
+The LLM's job is primarily:
+
+- understand order language
+- extract quantities
+- reconcile ambiguous product descriptions
+- explain proposed actions
+
+The LLM must NOT:
+
+- invent catalog SKUs
+- invent inventory quantities
+- claim an action succeeded without a successful tool response
+- bypass risk rules
+- directly approve its own high-risk order
+- override human decisions
+
+Keep prompts in prompts.py.
+
+Make the LLM provider configurable using environment variables.
+
+==================================================
+18. IDEMPOTENCY
+==================================================
+
+Processing the same order twice must not accidentally:
+
+- dispatch twice
+- reroute twice
+- create duplicate inventory actions
+
+Use order status and/or action IDs to make operations idempotent.
+
+==================================================
+19. TESTING
+==================================================
+
+Write pytest tests for:
+
+1. Correct catalog matching.
+2. Ambiguous catalog matching.
+3. Invalid SKU handling.
+4. Sufficient inventory.
+5. Partial inventory.
+6. Alternate warehouse fulfillment.
+7. Back-order.
+8. Negative inventory.
+9. Low-risk auto-dispatch.
+10. High-risk human review.
+11. Human approval.
+12. Human rejection.
+13. Human override.
+14. Duplicate processing/idempotency.
+15. Audit trail creation.
+
+Tests should use the real CSV schema where possible.
+
+==================================================
+20. MANIFEST.md
+==================================================
+
+Create a clear MANIFEST.md containing:
+
+1. Project overview.
+2. Architecture.
+3. File-by-file explanation.
+4. Agent workflow.
+5. Tool definitions.
+6. Database design.
+7. Risk rules.
+8. Human-in-the-loop design.
+9. Assumptions made.
+10. Unspecified requirements and how they were resolved.
+11. Data-quality handling.
+12. LLM responsibilities vs deterministic business logic.
+13. Security/safety considerations.
+14. What was intentionally not implemented.
+15. What could be improved with more time.
+
+Also explicitly document important engineering decisions.
+
+==================================================
+21. README.md
+==================================================
+
+README must contain:
+
+- project description
+- prerequisites
+- installation
+- environment configuration
+- database setup
+- how to run
+- how to process an order
+- API examples
+- human-review example
+- test instructions
+- sample workflow
+
+Example:
+
+python -m venv .venv
+
+source .venv/bin/activate
+
+pip install -r requirements.txt
+
+uvicorn app.main:app --reload
+
+==================================================
+22. IMPORTANT ENGINEERING PRINCIPLES
+==================================================
+
+Follow these principles:
+
+1. Deterministic business logic should remain in Python.
+2. Use the LLM only where language understanding is needed.
+3. Never trust LLM-generated facts without validation.
+4. Never allow the LLM to invent inventory.
+5. Never allow automatic dispatch for uncertain/high-risk orders.
+6. Human review must be a real state in the workflow.
+7. Every important action must be auditable.
+8. All external actions must be represented as tools.
+9. Make the agent state explicit.
+10. Prefer simple, readable code over unnecessary abstraction.
+11. Do not build a frontend unless explicitly requested.
+12. Do not expose chain-of-thought; expose concise decision explanations/action traces.
+13. Use type hints and Pydantic models.
+14. Handle failures safely.
+15. Make the implementation easy for another engineer to explain.
+
+==================================================
+23. DEVELOPMENT PROCESS
+==================================================
+
+IMPORTANT:
+
+Before writing implementation code:
+
+STEP 1:
+Inspect all three CSV files.
+
+STEP 2:
+Print/display:
+- columns
+- row counts
+- sample records
+- data-quality issues
+- all unique SKUs
+- relevant order patterns
+
+STEP 3:
+Describe the actual business rules inferred from the dataset.
+
+STEP 4:
+Identify assumptions that are NOT explicitly specified.
+
+STEP 5:
+Propose the final architecture.
+
+STEP 6:
+Only after the architecture is clear, implement the project.
+
+Do not blindly assume requirements that are not present in the dataset or challenge description.
+
+==================================================
+24. FINAL QUALITY CHECK
+==================================================
+
+Before finishing:
+
+- Run all tests.
+- Run the application.
+- Process representative orders from the actual CSV.
+- Verify low-risk orders can auto-dispatch.
+- Verify uncertain orders enter human review.
+- Verify approval/rejection/override.
+- Verify alternate warehouse handling.
+- Verify back-orders.
+- Verify audit trail.
+- Verify database persistence.
+- Verify duplicate processing is safe.
+- Verify no fake SKU/inventory values can be created by the LLM.
+- Verify README and MANIFEST are complete.
+
+At the end, provide:
+
+1. Final project tree.
+2. Explanation of the architecture.
+3. Explanation of the agent workflow.
+4. Explanation of human-in-the-loop.
+5. Test results.
+6. Known limitations.
+7. Commands required to run the project.
+
+Do not skip data inspection.
+Do not invent dataset columns.
+Do not build a UI unless explicitly requested.
