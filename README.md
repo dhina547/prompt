@@ -1,3 +1,4 @@
+CREATE OR REPLACE VIEW LEDGER_MASTER_50K_VW AS
 SELECT
     COA_BALANCE_AMOUNT_LCY,
     PROVISION_AMOUNT_LCY,
@@ -58,23 +59,21 @@ FROM (
                ORDER BY ROWID
            ) AS RN
     FROM LEDGER_MASTER_MONTHLY_HIST t
-    WHERE BUSINESS_DATE >= DATE '2025-06-30'
-      AND BUSINESS_DATE <  DATE '2026-08-01'
-      AND BUSINESS_DATE IN (
-          DATE '2025-12-31',
-          DATE '2025-10-31',
-          DATE '2025-06-30',
-          DATE '2025-11-30',
-          DATE '2026-06-30',
-          DATE '2025-08-31',
-          DATE '2025-07-31',
-          DATE '2026-07-31',
-          DATE '2026-03-31',
-          DATE '2026-05-31',
-          DATE '2026-04-30',
-          DATE '2026-01-31',
-          DATE '2026-02-28'
-      )
+    WHERE BUSINESS_DATE IN (
+        DATE '2025-12-31',
+        DATE '2025-10-31',
+        DATE '2025-06-30',
+        DATE '2025-11-30',
+        DATE '2026-06-30',
+        DATE '2025-08-31',
+        DATE '2025-07-31',
+        DATE '2026-07-31',
+        DATE '2026-03-31',
+        DATE '2026-05-31',
+        DATE '2026-04-30',
+        DATE '2026-01-31',
+        DATE '2026-02-28'
+    )
 )
 WHERE
       (BUSINESS_DATE IN (
@@ -93,5 +92,4 @@ WHERE
           DATE '2026-04-30',
           DATE '2026-01-31',
           DATE '2026-02-28'
-      ) AND RN <= 3846)
-ORDER BY BUSINESS_DATE;
+      ) AND RN <= 3846);
