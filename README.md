@@ -1,95 +1,28 @@
-CREATE OR REPLACE VIEW LEDGER_MASTER_50K_VW AS
-SELECT
-    COA_BALANCE_AMOUNT_LCY,
-    PROVISION_AMOUNT_LCY,
-    ACCOUNTING_DEAL_DATE,
-    COA_BALANCE_AMOUNT,
-    MATURITY_DATE,
-    DEAL_DATE,
-    SOURCE_SYSTEM_TIMESTAMP,
-    STRIKE_PRICE,
-    PREMIUM_AMOUNT,
-    PREMIUM_RATE,
-    COF_RATE,
-    PRINCIPAL_AMOUNT,
-    OUTSTANDING_QUANTITY,
-    MARKET_VALUE,
-    CLOSE_DATE,
-    REPORT_CODE,
-    INTEREST_FREQ,
-    QUANTITY,
-    PURCHASED_INTEREST,
-    OUTSTANDING_PRINCIPAL_AMOUNT,
-    OUTSTANDING_BOOK_VALUE,
-    MARKET_PRICE,
-    ACCOUNT_NATURE,
-    LIMIT_UNDRAWN_AMT_LCY,
-    LIMIT_UTILIZED_AMT_LCY,
-    LIMIT_UTIL_CURRENCY_CODE,
-    LIMIT_AMT_LCY,
-    ACCOUNTING_INTEREST_RATE,
-    ACCOUNTING_MATURITY_DATE,
-    LIQUIDATION_BALANCE_AMOUNT,
-    COA_CURRENCY_CODE,
-    BUSINESS_DATE,
-    BOOK_VALUE,
-    ACCRUED_INTEREST,
-    ISSUE_DATE,
-    PREMIUM_CURRENCY_CODE,
-    VALUE_DATE,
-    TRADE_CLASS,
-    HEDGING_TRADING_IND,
-    LIMIT_INITIAL_AMT,
-    LIMIT_EXPIRY_DATE,
-    LIMIT_APPROVED_AMT,
-    TRADE_MASTER_BKEY,
-    CUSTOMER_BKEY,
-    USER_CODE,
-    CUSTOMER_BRANCH_CODE,
-    BANK_IDENTIFIER_CODE,
-    CUSTOMER_STATUS_CODE,
-    CUSTOMER_SERIAL_CODE,
-    CUSTOMER_NAME,
-    CITY,
-    NATIONAL_ID
-FROM (
-    SELECT t.*,
-           ROW_NUMBER() OVER (
-               PARTITION BY BUSINESS_DATE
-               ORDER BY ROWID
-           ) AS RN
-    FROM LEDGER_MASTER_MONTHLY_HIST t
-    WHERE BUSINESS_DATE IN (
-        DATE '2025-12-31',
-        DATE '2025-10-31',
-        DATE '2025-06-30',
-        DATE '2025-11-30',
-        DATE '2026-06-30',
-        DATE '2025-08-31',
-        DATE '2025-07-31',
-        DATE '2026-07-31',
-        DATE '2026-03-31',
-        DATE '2026-05-31',
-        DATE '2026-04-30',
-        DATE '2026-01-31',
-        DATE '2026-02-28'
-    )
-)
-WHERE
-      (BUSINESS_DATE IN (
-          DATE '2025-12-31',
-          DATE '2025-10-31'
-      ) AND RN <= 3847)
-   OR (BUSINESS_DATE IN (
-          DATE '2025-06-30',
-          DATE '2025-11-30',
-          DATE '2026-06-30',
-          DATE '2025-08-31',
-          DATE '2025-07-31',
-          DATE '2026-07-31',
-          DATE '2026-03-31',
-          DATE '2026-05-31',
-          DATE '2026-04-30',
-          DATE '2026-01-31',
-          DATE '2026-02-28'
-      ) AND RN <= 3846);
+
+1. Official Power BI Service (Cloud)
+
+In the cloud, the limits apply to the compressed in-memory size of a single dataset. Because Power BI compresses data heavily, your 10M rows × 100 columns will likely take up 1 GB to 2 GB of space.
+• Power BI Pro: 1 GB maximum per dataset.
+	• Warning: Your 100 columns might put you dangerously close to or over this limit as the 50k daily rows pile up.
+• Power BI Premium Per User (PPU): 100 GB maximum per dataset.
+• Power BI Premium Capacity / Fabric (F-SKUs): 25 GB to 400 GB+ per dataset (depending on the SKU tier your company buys).
+Note: The total overall storage workspace limit across all reports is 10 GB for Pro and up to 100 TB for Premium.
+
+🖥️ 2. Power BI Report Server (On-Premises)
+
+If your company is hosting reports on their own local server, the limits are governed by file size rather than cloud licensing capacity:
+• Maximum File Size: 2 GB maximum per .pbix file.
+	• Warning: Because Incremental Refresh does not work here, the server must pull all 10M + 50k rows every day. If the compressed size of that full history ever crosses 2 GB, the file will fail to upload or refresh entirely.
+• Server Hardware Limits: There is no software cap on total workspace storage; it is limited entirely by the hard drive space and RAM available on your company's physical server hardware.
+
+💡 Summary for your Architecture
+
+If your company uses Power BI Pro or On-Premises Report Server, you are at high risk of crashing into the 1 GB / 2 GB limits due to your massive 100-column width. If you use Premium/Fabric, you have absolutely nothing to worry about.
+Do you know which license or environment (Pro, Premium, or On-Premises Server) your team is currently tracking against? If you are on Pro or On-Premises, I can show you how to check your exact current dataset size in Power BI Desktop before publishing.
+Try without personalization
+
+
+[ Power BI Desktop ] ──> Define Parameters & Policy ──> Pulls ALL 10M rows locally (once)
+          │
+          ▼ (Publish)
+[ Power BI Service ] ──> Creates isolated partitions ──> Daily refreshes read ONLY the 50k rows
